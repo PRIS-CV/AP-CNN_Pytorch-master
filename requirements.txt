@@ -1,0 +1,8 @@
+# pip install -r requirements.txt
+numpy
+torch == 0.4.1
+torchvision == 0.2.1
+opencv-python
+visdom
+pillow
+wget
