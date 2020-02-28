@@ -1,6 +1,6 @@
 # AP-CNN
 
-This repository contains the pytorch implementation for the CVPR#6637 paper "Weakly Supervised Attention Pyramid Convolutional Neural Network for Fine-Grained Visual Classification".
+This repository contains the pytorch implementation for the paper "Weakly Supervised Attention Pyramid Convolutional Neural Network for Fine-Grained Visual Classification".
 <img src="examples/framework.jpg" width="870px" height="321px"/>
 
 ### Dependencies
