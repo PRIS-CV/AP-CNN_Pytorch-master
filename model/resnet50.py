@@ -14,12 +14,54 @@ from torch.nn import init
 from lib.nms.pth_nms import pth_nms
 
 def nms(dets, thresh):
-    "Dispatch to either CPU or GPU NMS implementations.\
-    Accept dets as tensor"""
+    "Dispatch to either CPU or GPU NMS implementations. Accept dets as tensor"
     return pth_nms(dets, thresh)
 
 from torch.utils.checkpoint import checkpoint_sequential
 
+def get_merge_bbox(dets, inds):
+    xx1 = np.min(dets[inds][:,0])
+    yy1 = np.min(dets[inds][:,1])
+    xx2 = np.max(dets[inds][:,2])
+    yy2 = np.max(dets[inds][:,3])
+
+    return np.array((xx1, yy1, xx2, yy2))
+
+def pth_nms_merge(dets, thresh, topk):
+    dets = dets.cpu().data.numpy()
+    x1 = dets[:, 0]
+    y1 = dets[:, 1]
+    x2 = dets[:, 2]
+    y2 = dets[:, 3]
+    scores = dets[:, 4]
+
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    order = scores.argsort()[::-1]
+
+    boxes_merge = []
+    cnt = 0
+    while order.size > 0:
+        i = order[0]
+        
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0.0, xx2 - xx1 + 1)
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+        ovr = inter / (areas[i] + areas[order[1:]] - inter)
+        inds = np.where(ovr <= thresh)[0]
+
+        inds_merge = np.where((ovr > 0.5)*(0.9*scores[i]<scores[order[1:]]))[0]
+        boxes_merge.append(get_merge_bbox(dets, np.append(i, order[inds_merge+1])))
+        order = order[inds + 1]
+
+        cnt += 1
+        if cnt >= topk:
+            break
+
+    return torch.from_numpy(np.array(boxes_merge))
 
 class BasicConv(nn.Module):
 

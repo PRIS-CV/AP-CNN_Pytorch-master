@@ -102,14 +102,14 @@ def main():
         transforms.RandomCrop(crop_size),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize([0.486, 0.5, 0.433], [0.230, 0.225, 0.264]),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
     transform_test = transforms.Compose([
         transforms.Resize((resize_size, resize_size), Image.BILINEAR),
         transforms.CenterCrop(crop_size),
         transforms.ToTensor(),
-        transforms.Normalize([0.483, 0.492, 0.423], [0.225, 0.221, 0.248]),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
     unorm = UnNormalizer([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
