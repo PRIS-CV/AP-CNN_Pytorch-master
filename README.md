@@ -1,7 +1,6 @@
 # AP-CNN
 
 Code release for Weakly Supervised Attention Pyramid Convolutional Neural Network for Fine-Grained Visual Classification (TIP2021).
-<img src="examples/framework.jpg" width="870px" height="321px"/>
 
 ### Dependencies
 Python 3.6 with all of the `pip install -r requirements.txt` packages including:
