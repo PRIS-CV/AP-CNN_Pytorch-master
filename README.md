@@ -1,6 +1,6 @@
 # AP-CNN
 
-This repository contains the pytorch implementation for the paper "Weakly Supervised Attention Pyramid Convolutional Neural Network for Fine-Grained Visual Classification".
+Code release for Weakly Supervised Attention Pyramid Convolutional Neural Network for Fine-Grained Visual Classification (TIP2021).
 <img src="examples/framework.jpg" width="870px" height="321px"/>
 
 ### Dependencies
@@ -67,5 +67,9 @@ Python 3.6 with all of the `pip install -r requirements.txt` packages including:
 ### Pretrained Model
 Download from: https://pretrained_models_ap_cnn
 
-
+## Contact
+Thanks for your attention!
+If you have any suggestion or question, you can leave a message here or contact us directly:
+- mazhanyu@bupt.edu.cn
+- dingyf@bupt.edu.cn
 
