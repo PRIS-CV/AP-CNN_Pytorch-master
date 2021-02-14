@@ -52,9 +52,7 @@ Python 3.6 with all of the `pip install -r requirements.txt` packages including:
 ### Training
 **Start:**
 
-1. `bash lib/make.sh` to compile NMS.
-
-2. `python train.py --dataset {cars,airs,birds} --model {resnet50,vgg19} [options: --visualize]` to start training.
+1. `python train.py --dataset {cars,airs,birds} --model {resnet50,vgg19} [options: --visualize]` to start training.
 - For example, to train ResNet50 on Stanford-Cars: `python train.py --dataset cars --model resnet50`
 - Run `python train.py --help` to see full input arguments.
 
@@ -63,10 +61,21 @@ Python 3.6 with all of the `pip install -r requirements.txt` packages including:
 
 2. Visualize online attention masks and ROIs on `http://localhost:8097`.
 
-### Pretrained Model
-Download from: https://pretrained_models_ap_cnn
+### Citation
+If you find this paper useful in your research, please consider citing:
+```
+@ARTICLE{9350209,
+author={Y. {Ding} and Z. {Ma} and S. {Wen} and J. {Xie} and D. {Chang} and Z. {Si} and M. {Wu} and H. {Ling}},
+journal={IEEE Transactions on Image Processing},
+title={AP-CNN: Weakly Supervised Attention Pyramid Convolutional Neural Network for Fine-Grained Visual Classification},
+year={2021},
+volume={30},
+number={},
+pages={2826-2836},
+doi={10.1109/TIP.2021.3055617}}
+```
 
-## Contact
+### Contact
 Thanks for your attention!
 If you have any suggestion or question, you can leave a message here or contact us directly:
 - mazhanyu@bupt.edu.cn

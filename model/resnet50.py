@@ -11,14 +11,6 @@ import torch.utils.model_zoo as model_zoo
 import torch.nn.functional as F
 from torch.nn import init
 
-from lib.nms.pth_nms import pth_nms
-
-def nms(dets, thresh):
-    "Dispatch to either CPU or GPU NMS implementations. Accept dets as tensor"
-    return pth_nms(dets, thresh)
-
-from torch.utils.checkpoint import checkpoint_sequential
-
 def get_merge_bbox(dets, inds):
     xx1 = np.min(dets[inds][:,0])
     yy1 = np.min(dets[inds][:,1])
@@ -336,7 +328,10 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
 
-        self.num_segments = 2
+        if self.num_classes == 200:
+            hidden_num = 512
+        else:
+            hidden_num = 256
 
         if block == BasicBlock:
             fpn_sizes = [self.layer1[layers[0] - 1].conv2.out_channels, self.layer2[layers[1] - 1].conv2.out_channels,
@@ -354,39 +349,39 @@ class ResNet(nn.Module):
             nn.AdaptiveAvgPool2d(1),
             Flatten(),
             nn.BatchNorm1d(256),
-            nn.Linear(256, 256),
-            nn.BatchNorm1d(256),
+            nn.Linear(256, hidden_num),
+            nn.BatchNorm1d(hidden_num),
             nn.ELU(inplace=True),
-            nn.Linear(256, self.num_classes)
+            nn.Linear(hidden_num, self.num_classes)
         )
 
         self.cls4 = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             Flatten(),
             nn.BatchNorm1d(256),
-            nn.Linear(256, 256),
-            nn.BatchNorm1d(256),
+            nn.Linear(256, hidden_num),
+            nn.BatchNorm1d(hidden_num),
             nn.ELU(inplace=True),
-            nn.Linear(256, self.num_classes)
+            nn.Linear(hidden_num, self.num_classes)
         )
 
         self.cls3 = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             Flatten(),            
             nn.BatchNorm1d(256),
-            nn.Linear(256, 256),
-            nn.BatchNorm1d(256),
+            nn.Linear(256, hidden_num),
+            nn.BatchNorm1d(hidden_num),
             nn.ELU(inplace=True),
-            nn.Linear(256, self.num_classes)
+            nn.Linear(hidden_num, self.num_classes)
         )
 
         self.cls_concate = nn.Sequential(
             Flatten(),
             nn.BatchNorm1d(256*3),
-            nn.Linear(256*3, 256),
-            nn.BatchNorm1d(256),
+            nn.Linear(256*3, hidden_num),
+            nn.BatchNorm1d(hidden_num),
             nn.ELU(inplace=True),
-            nn.Linear(256, self.num_classes)
+            nn.Linear(hidden_num, self.num_classes)
         )
 
         self.criterion = nn.CrossEntropyLoss()
@@ -420,7 +415,6 @@ class ResNet(nn.Module):
         """generation multi-leve ROIs upon spatial attention masks with NMS method"""
         with torch.no_grad():
             roi_ret_nms = []
-            roi_score_nms = []
             n, c, h, w = att_mask.size()
             att_corner_unmask = torch.zeros_like(att_mask).cuda()
             if self.num_classes == 200:
@@ -436,19 +430,14 @@ class ResNet(nn.Module):
                 score_thred_index = scores > scores.mean()
                 boxes = boxes[score_thred_index, :]
                 scores = scores[score_thred_index]
-                nms_index = nms(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred)[:topk]
-                boxes_nms = boxes[nms_index, :]
-                if len(boxes_nms.size()) == 1:
-                    boxes_nms = boxes_nms.unsqueeze(0)
+                boxes_nms = pth_nms_merge(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred, topk).cuda()
                 boxes_nms[:, 0] = torch.clamp(boxes_nms[:, 0], min=0)
                 boxes_nms[:, 1] = torch.clamp(boxes_nms[:, 1], min=0)
                 boxes_nms[:, 2] = torch.clamp(boxes_nms[:, 2], max=img_w - 1)
                 boxes_nms[:, 3] = torch.clamp(boxes_nms[:, 3], max=img_h - 1)
-                scores_nms = scores[nms_index]
-                roi_ret_nms.append(
-                    torch.cat([torch.FloatTensor([i] * boxes_nms.size(0)).unsqueeze(1).cuda(), boxes_nms], 1))
-                roi_score_nms.append(scores_nms)
-            return torch.cat(roi_ret_nms, 0), torch.cat(roi_score_nms)
+                roi_ret_nms.append(torch.cat([torch.FloatTensor([i] * boxes_nms.size(0)).unsqueeze(1).cuda(), boxes_nms], 1))
+
+            return torch.cat(roi_ret_nms, 0)
 
     def get_roi_crop_feat(self, x, roi_list, scale):
         """ROI guided refinement: ROI guided Zoom-in & ROI guided Dropblock"""
@@ -548,9 +537,9 @@ class ResNet(nn.Module):
 
 
         # roi pyramid
-        roi_3, roi_score_3 = self.get_att_roi(a3, 2 ** 3, 64, img_h, img_w, iou_thred=0.05, topk=5)
-        roi_4, roi_score_4 = self.get_att_roi(a4, 2 ** 4, 128, img_h, img_w, iou_thred=0.05, topk=3)
-        roi_5, roi_score_5 = self.get_att_roi(a5, 2 ** 5, 256, img_h, img_w, iou_thred=0.05, topk=1)
+        roi_3 = self.get_att_roi(a3, 2 ** 3, 64, img_h, img_w, iou_thred=0.05, topk=5)
+        roi_4 = self.get_att_roi(a4, 2 ** 4, 128, img_h, img_w, iou_thred=0.05, topk=3)
+        roi_5 = self.get_att_roi(a5, 2 ** 5, 256, img_h, img_w, iou_thred=0.05, topk=1)
         roi_list = [roi_3, roi_4, roi_5]
 
         # stage II

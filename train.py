@@ -215,48 +215,45 @@ def main():
         results_test_file.flush()
         return test_acc, test_loss
 
-    optimizer = optim.SGD(net.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epoch)
+    if args.dataset == 'birds':
+        optimizer = optim.SGD([
+                                {'params': nn.Sequential(*list(net.children())[7:]).parameters(),   'lr': learning_rate},
+                                {'params': nn.Sequential(*list(net.children())[:7]).parameters(),   'lr': learning_rate/10}
+                                
+                            ], 
+                            momentum=momentum, weight_decay=weight_decay)
 
-    # ### for birds
-    # # ResNet
-    # optimizer = optim.SGD([
-    #                         {'params': nn.Sequential(*list(net.children())[7:]).parameters(),   'lr': learning_rate},
-    #                         {'params': nn.Sequential(*list(net.children())[:7]).parameters(),   'lr': learning_rate/10}
-                            
-    #                      ], 
-    #                       momentum=momentum, weight_decay=weight_decay)
-
-    def cosine_anneal_schedule(t):
-        cos_inner = np.pi * (t % (num_epoch))
-        cos_inner /= (num_epoch)
-        cos_out = np.cos(cos_inner) + 1
-        return float( learning_rate / 2 * cos_out)
-  
-    # for epoch in range(0, num_epoch):
-    #     scheduler.step(epoch)
-    #     # optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch)
-    #     # optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch) / 10
-    #     for param_group in optimizer.param_groups:
-    #         print(param_group['lr'])
-    #     train(epoch)
-    #     test(epoch)
-
-    # torch.save(net.state_dict(), os.path.join(exp_dir, 'model_final.pth'))
+        def cosine_anneal_schedule(t):
+            cos_inner = np.pi * (t % (num_epoch))
+            cos_inner /= (num_epoch)
+            cos_out = np.cos(cos_inner) + 1
+            return float( learning_rate / 2 * cos_out)
     
-    max_test_acc = 0.
-    for epoch in range(0, num_epoch):
-        scheduler.step(epoch)
-        for param_group in optimizer.param_groups:
-            print(param_group['lr'])
-        train(epoch)
-        test_acc, _ = test(epoch)
-        if test_acc > max_test_acc:
-            max_test_acc = test_acc
-            torch.save(net.state_dict(), os.path.join(exp_dir, 'model_best.pth'))
-        print('max_test_acc=',max_test_acc)
+        for epoch in range(0, num_epoch):
+            optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch)
+            optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch) / 10
+            for param_group in optimizer.param_groups:
+                print(param_group['lr'])
+            train(epoch)
+            test(epoch)
 
-    torch.save(net.state_dict(), os.path.join(exp_dir, 'model_final.pth'))
+    else:
+        optimizer = optim.SGD(net.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epoch)
+        
+        max_test_acc = 0.
+        for epoch in range(0, num_epoch):
+            scheduler.step(epoch)
+            for param_group in optimizer.param_groups:
+                print(param_group['lr'])
+            train(epoch)
+            test_acc, _ = test(epoch)
+            if test_acc > max_test_acc:
+                max_test_acc = test_acc
+                torch.save(net.state_dict(), os.path.join(exp_dir, 'model_best.pth'))
+            print('max_test_acc=',max_test_acc)
+
+    torch.save(net.state_dict(), os.path.join(exp_dir, 'model_final.pth'))  
 
 if __name__=="__main__":
     main()

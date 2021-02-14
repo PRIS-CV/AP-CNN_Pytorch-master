@@ -7,20 +7,54 @@ import os
 import numpy as np
 import cv2
 import random
-# import matplotlib.pyplot as plt
 import torch.utils.model_zoo as model_zoo
 import torch.nn.functional as F
 from torch.nn import init
-
-from lib.nms.pth_nms import pth_nms
-
-def nms(dets, thresh):
-    "Dispatch to either CPU or GPU NMS implementations.\
-    Accept dets as tensor"""
-    return pth_nms(dets, thresh)
-
 from torch.utils.checkpoint import checkpoint_sequential
 
+def get_merge_bbox(dets, inds):
+    xx1 = np.min(dets[inds][:,0])
+    yy1 = np.min(dets[inds][:,1])
+    xx2 = np.max(dets[inds][:,2])
+    yy2 = np.max(dets[inds][:,3])
+
+    return np.array((xx1, yy1, xx2, yy2))
+
+def pth_nms_merge(dets, thresh, topk):
+    dets = dets.cpu().data.numpy()
+    x1 = dets[:, 0]
+    y1 = dets[:, 1]
+    x2 = dets[:, 2]
+    y2 = dets[:, 3]
+    scores = dets[:, 4]
+
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    order = scores.argsort()[::-1]
+
+    boxes_merge = []
+    cnt = 0
+    while order.size > 0:
+        i = order[0]
+        
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0.0, xx2 - xx1 + 1)
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+        ovr = inter / (areas[i] + areas[order[1:]] - inter)
+        inds = np.where(ovr <= thresh)[0]
+
+        inds_merge = np.where((ovr > 0.5)*(0.9*scores[i]<scores[order[1:]]))[0]
+        boxes_merge.append(get_merge_bbox(dets, np.append(i, order[inds_merge+1])))
+        order = order[inds + 1]
+
+        cnt += 1
+        if cnt >= topk:
+            break
+
+    return torch.from_numpy(np.array(boxes_merge))
 
 class BasicConv(nn.Module):
 
@@ -214,22 +248,16 @@ class PyramidAttentions(nn.Module):
         A3_spatial = self.A3_1(f3)
         A3_channel = self.A3_2(f3)
         A3 = A3_spatial*f3 + A3_channel*f3
-        # A3_downsampled = F.interpolate(A3, scale_factor=0.5)
-
 
         A4_spatial = self.A4_1(f4)
         A4_channel = self.A4_2(f4)
         A4_channel = (A4_channel + A3_channel) / 2
         A4 = A4_spatial*f4 + A4_channel*f4
-        # A4_x = (A3_downsampled_x + A4_x) / 2
-        # A4_downsampled_x = F.interpolate(A4_x, scale_factor=0.5)
-
 
         A5_spatial = self.A5_1(f5)
         A5_channel = self.A5_2(f5)
         A5_channel = (A5_channel + A4_channel) / 2
         A5 = A5_spatial*f5 + A5_channel*f5
-        # A5_x = (A4_downsampled_x + A5_x) / 2
 
         return [A3, A4, A5, A3_spatial, A4_spatial, A5_spatial]
 
@@ -319,7 +347,6 @@ class VGG(nn.Module):
             nn.Linear(256, 512),
             nn.BatchNorm1d(512),
             nn.ELU(inplace=True),
-            # nn.Dropout(0.5),
             nn.Linear(512, self.num_classes)
         )
 
@@ -330,7 +357,6 @@ class VGG(nn.Module):
             nn.Linear(256, 512),
             nn.BatchNorm1d(512),
             nn.ELU(inplace=True),
-            # nn.Dropout(0.5),
             nn.Linear(512, self.num_classes)
         )
 
@@ -341,7 +367,6 @@ class VGG(nn.Module):
             nn.Linear(256, 512),
             nn.BatchNorm1d(512),
             nn.ELU(inplace=True),
-            # nn.Dropout(0.5),
             nn.Linear(512, self.num_classes)
         )
 
@@ -352,7 +377,6 @@ class VGG(nn.Module):
             nn.Linear(512, 512),
             nn.BatchNorm1d(512),
             nn.ELU(inplace=True),
-            # nn.Dropout(0.5),
             nn.Linear(512, self.num_classes)
         )
 
@@ -371,7 +395,6 @@ class VGG(nn.Module):
     def get_att_roi(self, att_mask, feature_stride, anchor_size, img_h, img_w, iou_thred=0.2, topk=1):
         with torch.no_grad():
             roi_ret_nms = []
-            roi_score_nms = []
             n, c, h, w = att_mask.size()
             att_corner_unmask = torch.zeros_like(att_mask).cuda()
             if self.num_classes == 200:
@@ -387,19 +410,14 @@ class VGG(nn.Module):
                 score_thred_index = scores > scores.mean()
                 boxes = boxes[score_thred_index, :]
                 scores = scores[score_thred_index]
-                nms_index = nms(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred)[:topk]
-                boxes_nms = boxes[nms_index, :]
-                if len(boxes_nms.size()) == 1:
-                    boxes_nms = boxes_nms.unsqueeze(0)
+                boxes_nms = pth_nms_merge(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred, topk).cuda()
                 boxes_nms[:, 0] = torch.clamp(boxes_nms[:, 0], min=0)
                 boxes_nms[:, 1] = torch.clamp(boxes_nms[:, 1], min=0)
                 boxes_nms[:, 2] = torch.clamp(boxes_nms[:, 2], max=img_w - 1)
                 boxes_nms[:, 3] = torch.clamp(boxes_nms[:, 3], max=img_h - 1)
-                scores_nms = scores[nms_index]
-                roi_ret_nms.append(
-                    torch.cat([torch.FloatTensor([i] * boxes_nms.size(0)).unsqueeze(1).cuda(), boxes_nms], 1))
-                roi_score_nms.append(scores_nms)
-            return torch.cat(roi_ret_nms, 0), torch.cat(roi_score_nms)
+                roi_ret_nms.append(torch.cat([torch.FloatTensor([i] * boxes_nms.size(0)).unsqueeze(1).cuda(), boxes_nms], 1))
+
+            return torch.cat(roi_ret_nms, 0)
 
     def get_roi_crop_feat(self, x, roi_list, scale):
         n, c, x2_h, x2_w = x.size()
@@ -448,19 +466,6 @@ class VGG(nn.Module):
                 x2_ret.append(x2_crop_resize)
         return torch.cat(x2_ret, 0)
 
-    def bilinear(self, x1, x2):
-        n1, c1, h1, w1 = x1.size()
-        n2, c2, h2, w2 = x2.size()
-        assert n1==n2 and h1==h2 and w1==w2
-        x1 = x1.view(n1, c1, h1*w1)
-        x2 = x2.view(n2, c2, h2*w2)
-        x = torch.bmm(x1, torch.transpose(x2, 1, 2)) / (h1*w1)  # Bilinear
-        x = x.view(n1, c1*c2)
-        x = torch.sqrt(x + 1e-5)
-        x = torch.nn.functional.normalize(x)
-
-        return x
-
 
     def forward(self, inputs, targets):
         # inputs.requires_grad = True
@@ -469,7 +474,6 @@ class VGG(nn.Module):
         x3 = checkpoint_sequential(nn.Sequential(*list(self.features.children())[:27]), self.num_segments, inputs)
         x4 = checkpoint_sequential(nn.Sequential(*list(self.features.children())[27:40]), self.num_segments, x3)
         x5 = checkpoint_sequential(nn.Sequential(*list(self.features.children())[40:]), self.num_segments, x4)
-
 
         # stage I
         f3, f4, f5 = self.fpn([x3, x4, x5])
@@ -493,9 +497,9 @@ class VGG(nn.Module):
         correct = predicted.eq(targets.data).cpu().sum().item()
 
         # stage II
-        roi_3, roi_score_3 = self.get_att_roi(a3, 2 ** 3, 64, img_h, img_w, iou_thred=0.05, topk=5)
-        roi_4, roi_score_4 = self.get_att_roi(a4, 2 ** 4, 128, img_h, img_w, iou_thred=0.05, topk=3)
-        roi_5, roi_score_5 = self.get_att_roi(a5, 2 ** 5, 256, img_h, img_w, iou_thred=0.05, topk=1)
+        roi_3 = self.get_att_roi(a3, 2 ** 3, 64, img_h, img_w, iou_thred=0.05, topk=5)
+        roi_4 = self.get_att_roi(a4, 2 ** 4, 128, img_h, img_w, iou_thred=0.05, topk=3)
+        roi_5 = self.get_att_roi(a5, 2 ** 5, 256, img_h, img_w, iou_thred=0.05, topk=1)
         roi_list = [roi_3, roi_4, roi_5]
 
         x3_crop_resize = self.get_roi_crop_feat(x3, roi_list, 2 ** 3)
