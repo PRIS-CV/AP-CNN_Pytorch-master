@@ -55,6 +55,45 @@ def pth_nms_merge(dets, thresh, topk):
 
     return torch.from_numpy(np.array(boxes_merge))
 
+def pth_nms(dets, thresh, topk):
+    dets = dets.cpu().data.numpy()
+    x1 = dets[:, 0]
+    y1 = dets[:, 1]
+    x2 = dets[:, 2]
+    y2 = dets[:, 3]
+    scores = dets[:, 4]
+
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    order = scores.argsort()[::-1]
+
+    boxes_merge = []
+    cnt = 0
+    while order.size > 0:
+        i = order[0]
+        
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0.0, xx2 - xx1 + 1)
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+        ovr = inter / (areas[i] + areas[order[1:]] - inter)
+        inds = np.where(ovr <= thresh)[0]
+
+        xx1 = dets[i, 0]
+        yy1 = dets[i, 1]
+        xx2 = dets[i, 2]
+        yy2 = dets[i, 3]
+        boxes_merge.append(np.array((xx1, yy1, xx2, yy2)))
+        order = order[inds + 1]
+
+        cnt += 1
+        if cnt >= topk:
+            break
+
+    return torch.from_numpy(np.array(boxes_merge))
+
 class BasicConv(nn.Module):
 
     def __init__(self, in_planes, out_planes, kernel_size, stride=1, padding=0, dilation=1, groups=1, relu=True,
@@ -430,7 +469,7 @@ class ResNet(nn.Module):
                 score_thred_index = scores > scores.mean()
                 boxes = boxes[score_thred_index, :]
                 scores = scores[score_thred_index]
-                boxes_nms = pth_nms_merge(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred, topk).cuda()
+                boxes_nms = pth_nms(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred, topk).cuda()
                 boxes_nms[:, 0] = torch.clamp(boxes_nms[:, 0], min=0)
                 boxes_nms[:, 1] = torch.clamp(boxes_nms[:, 1], min=0)
                 boxes_nms[:, 2] = torch.clamp(boxes_nms[:, 2], max=img_w - 1)

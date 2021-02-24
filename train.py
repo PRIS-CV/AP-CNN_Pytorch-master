@@ -229,13 +229,18 @@ def main():
             cos_out = np.cos(cos_inner) + 1
             return float( learning_rate / 2 * cos_out)
     
+        max_test_acc = 0.
         for epoch in range(0, num_epoch):
             optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch)
             optimizer.param_groups[1]['lr'] = cosine_anneal_schedule(epoch) / 10
             for param_group in optimizer.param_groups:
                 print(param_group['lr'])
             train(epoch)
-            test(epoch)
+            test_acc, _ = test(epoch)
+            if test_acc > max_test_acc:
+                max_test_acc = test_acc
+                torch.save(net.state_dict(), os.path.join(exp_dir, 'model_best.pth'))
+            print('max_test_acc=',max_test_acc)
 
     else:
         optimizer = optim.SGD(net.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
