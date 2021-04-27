@@ -6,3 +6,4 @@ opencv-python
 visdom
 pillow
 wget
+cffi

@@ -11,6 +11,8 @@ import torch.utils.model_zoo as model_zoo
 import torch.nn.functional as F
 from torch.nn import init
 
+from lib.nms.pth_nms import pth_nms
+
 def get_merge_bbox(dets, inds):
     xx1 = np.min(dets[inds][:,0])
     yy1 = np.min(dets[inds][:,1])
@@ -47,45 +49,6 @@ def pth_nms_merge(dets, thresh, topk):
 
         inds_merge = np.where((ovr > 0.5)*(0.9*scores[i]<scores[order[1:]]))[0]
         boxes_merge.append(get_merge_bbox(dets, np.append(i, order[inds_merge+1])))
-        order = order[inds + 1]
-
-        cnt += 1
-        if cnt >= topk:
-            break
-
-    return torch.from_numpy(np.array(boxes_merge))
-
-def pth_nms(dets, thresh, topk):
-    dets = dets.cpu().data.numpy()
-    x1 = dets[:, 0]
-    y1 = dets[:, 1]
-    x2 = dets[:, 2]
-    y2 = dets[:, 3]
-    scores = dets[:, 4]
-
-    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
-    order = scores.argsort()[::-1]
-
-    boxes_merge = []
-    cnt = 0
-    while order.size > 0:
-        i = order[0]
-        
-        xx1 = np.maximum(x1[i], x1[order[1:]])
-        yy1 = np.maximum(y1[i], y1[order[1:]])
-        xx2 = np.minimum(x2[i], x2[order[1:]])
-        yy2 = np.minimum(y2[i], y2[order[1:]])
-        w = np.maximum(0.0, xx2 - xx1 + 1)
-        h = np.maximum(0.0, yy2 - yy1 + 1)
-        inter = w * h
-        ovr = inter / (areas[i] + areas[order[1:]] - inter)
-        inds = np.where(ovr <= thresh)[0]
-
-        xx1 = dets[i, 0]
-        yy1 = dets[i, 1]
-        xx2 = dets[i, 2]
-        yy2 = dets[i, 3]
-        boxes_merge.append(np.array((xx1, yy1, xx2, yy2)))
         order = order[inds + 1]
 
         cnt += 1
@@ -227,32 +190,32 @@ class PyramidFeatures(nn.Module):
     def __init__(self, B2_size, B3_size, B4_size, B5_size, feature_size=256):
         super(PyramidFeatures, self).__init__()
 
-        self.F5_1 = SimpleFPA(B5_size, feature_size)
-        self.F5_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
+        self.P5_1 = SimpleFPA(B5_size, feature_size)
+        self.P5_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
 
-        self.F4_1 = nn.Conv2d(B4_size, feature_size, kernel_size=1, stride=1, padding=0)
-        self.F4_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
+        self.P4_1 = nn.Conv2d(B4_size, feature_size, kernel_size=1, stride=1, padding=0)
+        self.P4_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
 
-        self.F3_1 = nn.Conv2d(B3_size, feature_size, kernel_size=1, stride=1, padding=0)
-        self.F3_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
+        self.P3_1 = nn.Conv2d(B3_size, feature_size, kernel_size=1, stride=1, padding=0)
+        self.P3_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
 
     def forward(self, inputs):
         B3, B4, B5 = inputs
 
-        F5_x = self.F5_1(B5)
-        F5_upsampled_x = F.interpolate(F5_x, scale_factor=2)
-        F5_x = self.F5_2(F5_x)
+        P5_x = self.P5_1(B5)
+        P5_upsampled_x = F.interpolate(P5_x, scale_factor=2)
+        P5_x = self.P5_2(P5_x)
 
-        F4_x = self.F4_1(B4)
-        F4_x = F5_upsampled_x + F4_x
-        F4_upsampled_x = F.interpolate(F4_x, scale_factor=2)
-        F4_x = self.F4_2(F4_x)
+        P4_x = self.P4_1(B4)
+        P4_x = P5_upsampled_x + P4_x
+        P4_upsampled_x = F.interpolate(P4_x, scale_factor=2)
+        P4_x = self.P4_2(P4_x)
 
-        F3_x = self.F3_1(B3)
-        F3_x = F3_x + F4_upsampled_x
-        F3_x = self.F3_2(F3_x)
+        P3_x = self.P3_1(B3)
+        P3_x = P3_x + P4_upsampled_x
+        P3_x = self.P3_2(P3_x)
 
-        return [F3_x, F4_x, F5_x]
+        return [P3_x, P4_x, P5_x]
 
 class PyramidAttentions(nn.Module):
     """Attention pyramid module with bottom-up attention pathway"""
@@ -469,7 +432,12 @@ class ResNet(nn.Module):
                 score_thred_index = scores > scores.mean()
                 boxes = boxes[score_thred_index, :]
                 scores = scores[score_thred_index]
-                boxes_nms = pth_nms(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred, topk).cuda()
+                # nms
+                nms_index = pth_nms(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred)[:topk]
+                boxes_nms = boxes[nms_index, :]
+                if len(boxes_nms.size()) == 1:
+                    boxes_nms = boxes_nms.unsqueeze(0)
+                # boxes_nms = pth_nms_merge(torch.cat([boxes, scores.unsqueeze(1)], dim=1), iou_thred, topk).cuda()
                 boxes_nms[:, 0] = torch.clamp(boxes_nms[:, 0], min=0)
                 boxes_nms[:, 1] = torch.clamp(boxes_nms[:, 1], min=0)
                 boxes_nms[:, 2] = torch.clamp(boxes_nms[:, 2], max=img_w - 1)
