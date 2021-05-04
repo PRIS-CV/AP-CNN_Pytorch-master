@@ -9,7 +9,7 @@ learning_rate: 0.001
 momentum: 0.9
 weight_decay: 5e-4
 num_epoch: 100
-resize_size: 512
+resize_size: 448
 crop_size: 448
 
 # visualizer config
