@@ -30,7 +30,7 @@ for i in range(len(foo)):
     image_path = foo[i].split(" ")[1][:-1]
     image_name = image_path.split("/")[1]
     is_train = int(bar[i].split(" ")[1][:-1])
-    classes = baz[i].split(" ")[1][:-1]
+    classes = baz[i].split(" ")[1][:-1].zfill(2)
     # split train & test data
     if is_train:
         # make class dir
