@@ -62,11 +62,14 @@ Python 3.6 with all of the `pip install -r requirements.txt` packages including:
 2. Visualize online attention masks and ROIs on `http://localhost:8097`.
 
 ### Pretrained Checkpoints
-|  Dataset       | accuracy(%)  |   Download                     |
-|  :----:        | :----:       |   :----:                       |
-| CUB-200-2011   | 88.4         |   [model](https://link.jscdn.cn/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvcyFBalpnaDNZaWxfY0hwMm9FTGhaZWpHT0VjQk5uP2U9cDF5cjVO.pth)      |
-| Stanford-Cars  | 95.3         |   [model](https://link.jscdn.cn/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvcyFBalpnaDNZaWxfY0hwMm14NldEdTFtSDZvN1ZwP2U9ZDRTc0ZB.pth)      |
-| FGVC-Aircraft  | 94.0         |   [model](https://link.jscdn.cn/1drv/aHR0cHM6Ly8xZHJ2Lm1zL3UvcyFBalpnaDNZaWxfY0hwMnUyekpTd3FmdUdsa1M1P2U9cXo2Y2Zh.pth)      |
+Pretrained checkpoints with following settings are available on [download link](https://pan.baidu.com/s/1Z3SafB3UgYaZW1ApqMeTAA), with access code "kjqu".
+
+|  Dataset      | base model  | accuracy(%)  |
+|  :----:       | :----:      |   :----:     |
+| CUB-200-2011  | resnet50    | 88.4         |
+| Stanford-Cars | resnet50    | 95.3         |
+| FGVC-Aircraft | resnet50    | 94.0         |
+
 
 ### Citation
 If you find this paper useful in your research, please consider citing:
