@@ -1,5 +1,5 @@
 # pip install -r requirements.txt
-numpy == 1.15.2
+numpy == 1.22.0
 torch == 0.4.1
 torchvision == 0.2.1
 opencv-python
